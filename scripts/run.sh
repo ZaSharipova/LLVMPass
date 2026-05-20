@@ -1,33 +1,47 @@
 #!/usr/bin/env bash
-
 set -e
 
-# FIXME: Its better to separate building from running since I dont want to rebuild project each time
-mkdir -p build/obj build/bin lls dots images
+process_module() {
+    local name="$1"
+    shift
+    local sources=("$@")
 
-cd build
-ninja
-cd ..
+    echo -e "\n\033[34mWorking on: ${sources[*]} -> ${name}\033[0m"
 
-clang -S -emit-llvm -O0 tests/test.c -o lls/test.ll
+    MYPASS_DOT_FILE="dots/${name}.dot"          \
+    MYPASS_MAP_FILE="dots/${name}_mapping.txt"  \
+    ./scripts/mypass-clang.sh                   \
+        "${sources[@]}" build/obj/Runtime.o     \
+        -o "build/bin/${name}_inst"
 
-# FIXME: you could use clang to pass your plugin
-# FIXME: want to see multi-module tests
-# FIXME: want to see tests with recursion, loops
-# FIXME: .gitignore, .clang-format may be useful here
-opt -load-pass-plugin=./build/lib/libMyPass.so \
-    -passes="my-pass" \
-    -S lls/test.ll -o lls/test_inst.ll
+    MYPASS_LOG_FILE="dots/${name}_log.txt" \
+    "./build/bin/${name}_inst"
 
-clang -c src/Runtime.c -o build/obj/Runtime.o
+    MYPASS_LOG_FILE="dots/${name}_log.txt"  \
+    python3 scripts/Annotate.py             \
+        "dots/${name}.dot"                  \
+        "dots/${name}_annotated.dot"
+}
 
-clang lls/test_inst.ll build/obj/Runtime.o -o build/bin/test_inst
-./build/bin/test_inst
+if [ $# -eq 0 ]; then
+    for src in tests/*.c; do
+        name=$(basename "$src" .c)
+        process_module "$name" "$src"
+    done
+else
+    for arg in "$@"; do
+        if [ -d "$arg" ]; then
+            name=$(basename "$arg")
+            sources=("$arg"/*.c)
+            process_module "$name" "${sources[@]}"
+        elif [ -f "$arg" ]; then
+            name=$(basename "$arg" .c)
+            process_module "$name" "$arg"
+        else
+            echo "Error: $arg is not a file or directory." >&2
+            exit 1
+        fi
+    done
+fi
 
-python3 scripts/Annotate.py
-
-# [flops]: This can be done more accurate via Python
-dot -Tpng dots/graph.dot -o images/graph.png
-dot -Tpng dots/graph_annotated.dot -o images/graph_annotated.png
-
-echo "Done! See images/graph.png (clean) and images/graph_annotated.png (with runtime values)"
+echo -e "\n\n\033[32mDone! \033[0m"

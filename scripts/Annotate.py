@@ -1,70 +1,81 @@
 #!/usr/bin/env python3
 
+import os
 import re
 import sys
+import pygraphviz as pgv
 from collections import defaultdict
 
-SHOW_FIRST_N = 3 # [flops]: extra variable
-
-def read_log(path: str) -> dict[int, list[int]]:
+def read_log(path: str) -> tuple[dict[int, list[int]], list[tuple[int, int]]]:
     values = defaultdict(list)
+    edges = []
     with open(path) as f:
         for line_no, raw in enumerate(f, 1):
             parts = raw.split()
-            if len(parts) != 2:
-                continue
-
-            try:
-                node_id = int(parts[0])
-                value = int(parts[1])
-
-            except ValueError:
-                print(f"warning: bad line {line_no}: {raw!r}", file = sys.stderr)
+            if not parts:
                 continue
             
+            if parts[0] == "edge":
+                if len(parts) != 3:
+                    print(f"Warning: bad edge line {line_no}: {raw!r}", file = sys.stderr)
+                    continue
+                try:
+                    edges.append((int(parts[1]), int(parts[2])))
+                except ValueError:
+                    print(f"Warning: bad edge line {line_no}: {raw!r}", file = sys.stderr)
+                continue
+
+            if len(parts) != 2:
+                continue
+            try:
+                node_id = int(parts[0])
+                value = int(parts[1], 0)
+            except ValueError:
+                print(f"Warning: bad line {line_no}: {raw!r}.", file = sys.stderr)
+                continue
+
             values[node_id].append(value)
 
-    return values
-
+    return values, edges
 
 def format_values(vals: list[int]) -> str:
     if not vals:
         return "values: (not executed)"
-
-    shown = vals                    
-    rest = len(vals) - len(shown) # FIXME[flops]: rest is always 0: rest = len(vals) - len(vals) = 0
-    text = "values: " + ", ".join(str(v) for v in shown)
-    if rest > 0:
-        text += f" ... (+{rest} more)"
-    
-    return text
-
-
-NODE_RE = re.compile(r'^(\s*n(\d+)\s*\[label=")([^"]*)(".*)$')
-
-# FIXME[flops]: Use pygraphiz/networkx to parse dot files and generate images from it
-def annotate_line(line: str, values: dict[int, list[int]]) -> str:
-    m = NODE_RE.match(line)
-    if not m:
-        return line
-
-    prefix, node_id_str, label_body, suffix = m.groups()
-    node_id = int(node_id_str)
-
-    addition = format_values(values.get(node_id, []))
-    new_label = f"{label_body}\\n{addition}"
-    return f"{prefix}{new_label}{suffix}\n" if not line.endswith("\n") else \
-           f"{prefix}{new_label}{suffix}"
-
+    return "values: " + ", ".join(str(v) for v in vals)
 
 def main():
-    values = read_log("runtime_log.txt") # FIXME: What if I have multi-module project?
+    log_path = os.environ.get("MYPASS_LOG_FILE", "runtime_log.txt")
+    graph_in = sys.argv[1] if len(sys.argv) > 1 else "dots/graph.dot"
+    graph_out = sys.argv[2] if len(sys.argv) > 2 else "dots/graph_annotated.dot"
 
-    with open("dots/graph.dot") as f_in, open("dots/graph_annotated.dot", "w") as f_out:
-        for line in f_in:
-            f_out.write(annotate_line(line, values))
+    values, edges = read_log(log_path)
 
-    print(f"Written dots/graph_annotated.dot ({sum(len(v) for v in values.values())} value records)")
+    Graph = pgv.AGraph(graph_in)
+
+    for node in Graph.nodes():
+        node_id = int(node.name[1:])
+        label = node.attr["label"]
+        node.attr["label"] = label + "\\n" + format_values(values.get(node_id, []))
+
+    existing_nodes = {node.name for node in Graph.nodes()}
+    added = set()
+    for from_id, to_id in edges:
+        from_name = f"n{from_id}"
+        to_name = f"n{to_id}"
+        if from_name not in existing_nodes or to_name not in existing_nodes:
+            continue
+        
+        key = (from_name, to_name)
+        if key in added:
+            continue
+        
+        added.add(key)
+        Graph.add_edge(from_name, to_name, color = "red", style = "dashed", label = "call")
+
+    Graph.write(graph_out)
+    png_out = "images/" + os.path.basename(graph_out).replace(".dot", ".png")
+    Graph.draw(png_out, prog = "dot")
+    print(f"Written {graph_out} ({sum(len(v) for v in values.values())} value records).")
 
 if __name__ == "__main__":
     main()

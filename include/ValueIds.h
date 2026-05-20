@@ -5,20 +5,23 @@
 
 #include <unordered_map>
 
-namespace mypass {
-class ValueIds {
+namespace defuse {
+class ValueIds final {
 public:
     ValueIds() = default;
     int GetOrAssign(const llvm::Value *V);
-    int Size(void) const { // TODO[flops]: It's better to return ids_.size() there
-        return next_id_;   
+    int Size(void) const {
+        return ids_.size();   
+    }
+
+    bool HasValue(const llvm::Value *Value) const {
+        return ids_.find(Value) != ids_.end();
     }
 
 private:
     std::unordered_map<const llvm::Value *, int> ids_;
-    int next_id_ = 0;
 };
 
-} // mypass
+} // defuse
 
 #endif // VALUE_IDS_H_

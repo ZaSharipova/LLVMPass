@@ -13,5 +13,5 @@ int main(void) {
     int result = Compute(4, 7);
     printf("%d\n", result);
     
-    return 1;
+    return 0;
 }

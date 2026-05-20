@@ -4,9 +4,9 @@
 #include "llvm/IR/Value.h"
 #include <string>
 
-namespace mypass {
+namespace defuse {
 std::string ShortLabel(const llvm::Value *V);
-std::string EscapeForDot(const std::string &s);
-} // mypass
+std::string EscapeForDot(const std::string_view &string);
+} // defuse
 
 #endif // LABELS_H_
