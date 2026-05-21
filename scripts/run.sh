@@ -8,19 +8,19 @@ process_module() {
 
     echo -e "\n\033[34mWorking on: ${sources[*]} -> ${name}\033[0m"
 
-    MYPASS_DOT_FILE="dots/${name}.dot"          \
-    MYPASS_MAP_FILE="dots/${name}_mapping.txt"  \
-    ./scripts/mypass-clang.sh                   \
-        "${sources[@]}" build/obj/Runtime.o     \
+    MYPASS_DOT_FILE="artifacts/${name}.dot"          \
+    MYPASS_MAP_FILE="artifacts/${name}_mapping.txt"  \
+    ./scripts/mypass-clang.sh                        \
+        "${sources[@]}" build/obj/Runtime.o          \
         -o "build/bin/${name}_inst"
 
-    MYPASS_LOG_FILE="dots/${name}_log.txt" \
+    MYPASS_LOG_FILE="artifacts/${name}_log.txt" \
     "./build/bin/${name}_inst"
 
-    MYPASS_LOG_FILE="dots/${name}_log.txt"  \
-    python3 scripts/Annotate.py             \
-        "dots/${name}.dot"                  \
-        "dots/${name}_annotated.dot"
+    MYPASS_LOG_FILE="artifacts/${name}_log.txt"  \
+    python3 scripts/Annotate.py                  \
+        "artifacts/${name}.dot"                  \
+        "artifacts/${name}_annotated.dot"
 }
 
 if [ $# -eq 0 ]; then

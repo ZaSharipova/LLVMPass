@@ -3,7 +3,7 @@
 set -e
 
 rm -rf build
-mkdir -p build/obj build/bin lls dots images build/bc
+mkdir -p build/obj build/bin lls artifacts images
 
 cmake -G Ninja                                  \
     -DCMAKE_C_COMPILER=clang-19                 \

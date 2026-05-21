@@ -7,6 +7,8 @@ int factorial(int n) {
 }
 
 int main(void) {
-    printf("%d\n", factorial(7));
+    int n = 7;
+    
+    printf("%d\n", factorial(n));
     return 0;
 }

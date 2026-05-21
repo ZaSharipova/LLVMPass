@@ -4,7 +4,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
     wget gnupg cmake ninja-build git \
-    libgraphviz-dev graphviz \
     lsb-release \
     software-properties-common \
     && rm -rf /var/lib/apt/lists/*
@@ -25,13 +24,10 @@ RUN wget https://apt.llvm.org/llvm.sh && \
 #     && rm -rf /var/lib/apt/lists/*
 
 RUN ln -s /usr/bin/clang-19    /usr/bin/clang && \
-    ln -s /usr/bin/clang++-19  /usr/bin/clang++ && \
-    ln -s /usr/bin/opt-19      /usr/bin/opt && \
-    ln -s /usr/bin/llc-19      /usr/bin/llc && \
-    ln -s /usr/bin/lld-19      /usr/bin/lld
+    ln -s /usr/bin/clang++-19  /usr/bin/clang++
 
 RUN apt-get update && apt-get install -y \
-    python3 python3-pip python3-pygraphviz \
+    python3 python3-pygraphviz \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /project
