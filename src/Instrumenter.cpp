@@ -54,7 +54,7 @@ void Instrumenter::InstrumentValue(llvm::Instruction &Instruction, int id) {
     }
 }
 
-int Instrumenter::FindCalleeEntryId(llvm::Argument *param, ValueIds &ids) {
+std::optional<int> Instrumenter::FindCalleeEntryId(llvm::Argument *param, ValueIds &ids) {
     for (llvm::User *user : param->users()) {
         auto *user_instruction = llvm::dyn_cast<llvm::Instruction>(user);
         if (!user_instruction || !ids.HasValue(user_instruction)) continue;
@@ -70,7 +70,7 @@ int Instrumenter::FindCalleeEntryId(llvm::Argument *param, ValueIds &ids) {
         }
     }
 
-    return -1;
+    return std::nullopt;
 }
 
 void Instrumenter::InstrumentEdges(llvm::CallInst *call, ValueIds &ids) {
@@ -84,11 +84,11 @@ void Instrumenter::InstrumentEdges(llvm::CallInst *call, ValueIds &ids) {
 
         auto param_it = callee->arg_begin();
         std::advance(param_it, i);
-        int to_id = FindCalleeEntryId(&*param_it, ids);
-        if (to_id == -1) continue;
+        auto to_id = FindCalleeEntryId(&*param_it, ids);
+        if (!to_id) continue;
 
         llvm::IRBuilder<> builder(call);
-        builder.CreateCall(log_edge_, {builder.getInt32(from_id),builder.getInt32(to_id)});
+        builder.CreateCall(log_edge_, {builder.getInt32(from_id),builder.getInt32(*to_id)});
     }
 }
 

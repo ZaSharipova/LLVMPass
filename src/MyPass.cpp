@@ -57,7 +57,7 @@ llvmGetPassPluginInfo(void) {
                     return false;
                 });
 
-            PassBuilder.registerPipelineStartEPCallback(
+            PassBuilder.registerFullLinkTimeOptimizationEarlyEPCallback(
                 [](ModulePassManager &ModulePassManager, OptimizationLevel) {
                 ModulePassManager.addPass(DefUsePass());
                 });

@@ -4,6 +4,8 @@
 #include "ValueIds.h"
 #include "llvm/IR/Module.h"
 
+#include <optional>
+
 namespace defuse {
 class Instrumenter final {
 public:
@@ -15,7 +17,7 @@ private:
     bool ShouldInstrument(const llvm::Instruction &Instruction) const;
     void InstrumentValue(llvm::Instruction &Instruction, int id);
     void InstrumentEdges(llvm::CallInst *call, ValueIds &ids);
-    int  FindCalleeEntryId(llvm::Argument *param, ValueIds &ids);
+    std::optional<int> FindCalleeEntryId(llvm::Argument *param, ValueIds &ids);
 
     llvm::Module &module_;
     llvm::FunctionCallee log_i32_;
