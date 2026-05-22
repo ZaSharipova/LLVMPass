@@ -7,17 +7,13 @@
 
 В зависимости от того, какие данные подаются на вход программе, итоговая картина получается разной -- отражается не только сама структура, но и проход исполнения.
 
-TODO[flops]: Good detailed doc. It will be useful if you add annotated graph image there
-
-FIXME[flops]: Don't forget to add .gitignore for `build/` dir e.t.c.
-
 ## Структура
 
 ## Входная точка
 `src/MyPass.cpp` -- это точка входа LLVM-пасса. В нем: 
 
-- Определён класс `MyPass`, наследник `PassInfoMixin<MyPass>`, с методом `run(Module &M, ModuleAnalysisManager &)` -- именно его вызывает `opt` для каждого модуля.
-- Реализована функция `llvmGetPassPluginInfo()`, которую `opt` находит при загрузке `.so` через `dlsym` и через которую плагин регистрирует имя пасса `my-pass` в `PassBuilder`.
+- Определён класс `MyPass`, наследник `PassInfoMixin<MyPass>`, с методом `run(Module &M, ModuleAnalysisManager &)` -- именно его вызывает `clang` для каждого модуля.
+- Реализована функция `llvmGetPassPluginInfo()`, которую `clang` находит при загрузке `.so` и через которую плагин регистрирует имя пасса `defuse-pass` в `PassBuilder`.
 Сама логика обработки IR вынесена в три модуля: `DotWriter` (запись графа), `Instrumenter` (вставка инструментации), `ValueIds` (выдача id).
 
 ## Что делает пасс верхнеуровнево?
@@ -37,29 +33,40 @@ Module -> Function -> BasicBlock -> Instruction
 - **`Instruction`** -- все инструкции IR (`add`, `load`, `store`, `call`, `mul`, ...). Каждая инструкция в SSA-форме определяет ровно одно значение;
 - **`ConstantInt`** -- константы. Они учитываются в лейблах (если попадаются как операнды), но **узлами в графе не становятся**, чтобы не завалить значениями картинку. Только реально вычисляемые значения получают узлы.
 
+> Отстутствие отображения констант -- вопрос спорный, но если таки не добавлять их в отрисовку defuse graph, то при вызове функции можно явно инициализировать параметры вызываемой функции, тогда и стрелки между caller и callee будут.
+
 Для каждой подходящей инструкции пасс смотрит её операнды (`Instruction.operands()`). Для каждого операнда, если он `Instruction` или `Argument`, рисуется ребро `operand -> Instruction`.
+
+- Также рисуется ребро между параметрами функции и их первыми использованиями:
+
+Например, для функции foo(int a, int b):
+``` 
+[инструкция вычислившая a] -> [первое использование param_0 в foo]
+[инструкция вычислившая b] -> [первое использование param_1 в foo] 
+```
+> Именно поэтому нужны явные инструкции, вычисляющие эти самые параметры.
 
 ### Тип 2: инструментация
 
 Параллельно пасс модифицирует IR. Он:
  
-- Объявляет в модуле две внешние функции -- `__mypass_log_i32(i32, i32)` и `__mypass_log_i64(i32, i64)`. Эти функции потом подцепятся из `Runtime.c` на стадии линковки.
+- Объявляет в модуле две внешние функции -- `mypass_log_i32__(i32, i32)` и `mypass_log_i64(i32, i64)__`. Эти функции потом подцепятся из `Runtime.c` на стадии линковки.
 - Идёт по всем инструкциям и отбирает те, что подходят для инструментации.
 Подходящие -- это инструкции, которые:
-- - имеют ненулевой результат типа `i32` или `i64` (для других у нас нет log-функции);
+- - имеют ненулевой результат типа `i32` или `i64` (для других автоматически результат в формате `i64` через %X);
 - - не являются терминаторами (`ret`, `br`, `switch` -- после терминатора в блоке не вставить);
 - - не являются `PHINode` (PHI должны идти в начале блока, и вставка вызова между ними сломает IR);
 - - не принадлежат самому runtime.
-После каждой такой инструкции через `IRBuilder` вставляется `call void @__mypass_log_iXX(i32 <id>, iXX %result)`.
+После каждой такой инструкции через `IRBuilder` вставляется `call void @mypass_log_iXX__(i32 <id>, iXX %result)`.
 
 ```llvm
   %9 = load i32, ptr %3, align 4
-  call void @__mypass_log_i32(i32 12, i32 %9)
+  call void @mypass_log_i32__(i32 12, i32 %9)
 ```
 
 ## Из чего строится граф
  
-Граф пишется в `dots/graph.dot` в формате graphviz. На нём:
+Граф пишется в `artifacts/<test_name>.dot` в формате graphviz. На нём:
  
 **Узлы** -- это значения IR. Каждый узел подписан так:
  
@@ -82,7 +89,7 @@ values: 8
 
 ### Как source-код превращается в граф
  
-Возьмём наш `tests/test.c`:
+Рассмотрим на примере `tests/test.c`:
  
 ```c
 int Compute(int n, int b) {
@@ -153,23 +160,30 @@ define i32 @Compute(i32 %0, i32 %1) {
  
 ### Что происходит при запуске
  
-`Runtime.c` определяет четыре функции:
+`Runtime.c` определяет 5 функций:
  
-- `__mypass_log_init` с атрибутом `constructor` -- вызывается автоматически **до** `main`. Открывает `runtime_log.txt` на запись.
-- `__mypass_log_finish` с атрибутом `destructor` -- вызывается **после** `main` или при `exit()`. Закрывает файл.
-- `__mypass_log_i32(int id, int32_t value)` и `__mypass_log_i64(int id, int64_t value)` -- пишут в лог строку `<id> <value>`.
-Каждый раз, когда выполнение в инструментированной программе доходит до вставленной инструкции `call void @__mypass_log_i32(i32 N, i32 %X)`, в файл записывается строка `N <значение_X_в_момент_выполнения>`.
+- `mypass_log_init__` с атрибутом `constructor` -- вызывается автоматически **до** `main`. Открывает `<test>_log.txt` на запись;
+- `mypass_log_finish__` с атрибутом `destructor` -- вызывается **после** main или при exit(). Закрывает файл;
+- `mypass_log_i32__(int id, int32_t value)` и `mypass_log_i64__(int id, int64_t value)` -- пишут в лог строку `<id> <value>`;
+- `mypass_log_edge__(uint32_t from_id, uint32_t to_id)` -- пишет в лог `edge <from_id> <to_id>`.
+
+Каждый раз, когда выполнение в инструментированной программе доходит до вставленной инструкции `call void @mypass_log_i32__(i32 N, i32 %X)`, в файл записывается строка `N <значение_X_в_момент_выполнения>`.
  
-Финальный `runtime_log.txt` -- это пары `(id, value)` ровно в том порядке, в каком выполнялись инструкции.
+Финальный `<test_name>_log.txt` -- это пары `(id, value)` ровно в том порядке, в каком выполнялись инструкции.
 
 ### Как накладываются значения на граф
  
 `scripts/Annotate.py` делает три вещи:
- 
-1. Читает `runtime_log.txt`, группирует значения по id: для каждого id строит список значений в порядке появления (`defaultdict(list)`).
-2. Читает `graph.dot` построчно. Для строк вида `n<id> [label="id=<id>\n..."]` вытаскивает id и дописывает к лейблу строку `values: v1, v2, v3 ... (+N more)`.
-3. Пишет результат в `graph_annotated.dot`.
-В лейбле отображаются первые `SHOW_FIRST_N = 3` значения. Если их больше -- добавляется хвост `... (+X more)`. Если id ни разу не появился в логе -- узел получает пометку `values: (not executed)` (например, для инструкций в недостижимых ветках).
+
+1. Читает `<test_name>_log.txt` (путь берётся из переменной окружения `MYPASS_LOG_FILE`), парсит 2 категории строк:
+   - `<id> <value>` -- значение узла, группирует по id в `defaultdict(list)`;
+   - `edge <from_id> <to_id>` -- рёбра вызовов, собирает в список.
+
+2. Читает `graph.dot` через `pygraphviz`. Для каждого узла вида `n<id>` дописывает к лейблу строку `values: v1, v2, v3 ...`. Если id не встречался в логе -- узел получает пометку `values: (not executed)`.
+
+3. Добавляет в граф рёбра из лога (красные пунктирные, `label="call"`), пропуская дубликаты и рёбра с несуществующими узлами.
+
+4. Пишет результат в `<test_name>_annotated.dot` и создает `images/<test_name>_annotated.png` через `dot`.
  
 ### Что если одна и та же переменная присваивается несколько раз
  
@@ -213,88 +227,89 @@ id=...
 values: 7, 14, 21 ...
 ```
 
+В итоге для, например, функции подсчета факториала:
+```C
+int factorial(int n) {
+    if (n <= 1) return 1;
+
+    return n * factorial(n - 1);
+}
+
+int main(void) {
+    printf("%d\n", factorial(7));
+    return 0;
+}
+```
+
+Получаем вот такой граф:
+![defuse-graph](/images/testRecursion_annotated_with_no_initialization.png)
+
+Если же мы вызовем функцию не от константы, а от переменной:
+```C
+int factorial(int n) {
+    if (n <= 1) return 1;
+
+    return n * factorial(n - 1);
+}
+
+int main(void) {
+    int n = 7;
+    printf("%d\n", factorial(n));
+    return 0;
+}
+```
+То получим уже вот такой граф:
+![defuse-graph](/images/testRecursion_annotated.png)
+
 ## Как запустить
  
 ### Linux
 
-Тестировалось на Ubuntu 24.04 с LLVM 19 из официального репозитория `apt.llvm.org`. На других дистрибутивах команды установки пакетов будут отличаться, но шаги те же.
+Тестировалось на Ubuntu 24.04 с LLVM 19. На других дистрибутивах команды установки пакетов будут отличаться, но шаги те же.
 
 #### 1. Установить базовые инструменты
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y \
-    wget gnupg ca-certificates \
-    cmake ninja-build git \
-    graphviz python3
+apt-get update
+apt-get install -y                   \
+    wget gnupg cmake ninja-build git \
+    libgraphviz-dev graphviz python3 \
+    lsb-release                      \
+    software-properties-common
 ```
 
-#### 2. Установить LLVM 19 из apt.llvm.org
-
-В стандартных репозиториях Ubuntu LLVM часто старый или собран без нужных нам компонентов. Поэтому у меня получилось запустить, только подключив версию из официального репозитория:
+#### 2. Установить LLVM 19
 
 ```bash
-sudo mkdir -p /etc/apt/keyrings
-wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | \
-    sudo tee /etc/apt/keyrings/llvm.asc > /dev/null
-
-echo "deb [signed-by=/etc/apt/keyrings/llvm.asc] http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | \
-    sudo tee /etc/apt/sources.list.d/llvm.list
-
-sudo apt-get update
-sudo apt-get install -y clang-19 llvm-19-dev
+wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh &&              \
+    ./llvm.sh 19 all &&              \
+    rm llvm.sh
 ```
-
-`noble` в URL — это кодовое имя Ubuntu 24.04. Для других версий поменяй:
-- Ubuntu 22.04 -> `jammy`
-- Ubuntu 20.04 -> `focal`
-- Debian 12 -> `bookworm`
 
 #### 3. Создать удобные симлинки (опционально, но рекомендуется)
 
-`run.sh` зовёт `clang`, `clang++`, `opt` без суффикса версии. Делаем симлинки:
+Делаем симлинки в случае непредвиденных ошибок:
 
 ```bash
-sudo ln -sf /usr/bin/clang-19   /usr/bin/clang
-sudo ln -sf /usr/bin/clang++-19 /usr/bin/clang++
-sudo ln -sf /usr/bin/opt-19     /usr/bin/opt
+ln -s /usr/bin/clang-19    /usr/bin/clang
+ln -s /usr/bin/clang++-19  /usr/bin/clang++
 ```
 
-Если не хочется трогать системные пути — можно вместо этого экспортировать `PATH` или поправить команды в `run.sh`.
+Если не хочется трогать системные пути -> можно вместо этого экспортировать `PATH` или поправить команды в `run.sh`.
 
 #### 4. Собрать плагин
 
 ```bash
-cmake -G Ninja \
-    -DCMAKE_C_COMPILER=/usr/bin/clang-19 \
-    -DCMAKE_CXX_COMPILER=/usr/bin/clang++-19 \
-    -DLLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm \
-    -B build
-cmake --build build
+./scripts/build.sh
 ```
 
-После сборки `build/lib/libMyPass.so` должен существовать:
+#### *Компиляция и LTO
 
-```bash
-ls build/lib/
-```
+Все исходники компилируются через обёртку [scripts/mypass-clang.sh](/scripts/mypass-clang.sh).
 
-### MacOS
-
-```bash
-brew install llvm graphviz cmake ninja
-export PATH="$(brew --prefix llvm)/bin:$PATH"
- 
-# собрать плагин
-mkdir -p build && cd build
-cmake -G Ninja \
-  -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang \
-  -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ \
-  -DLLVM_DIR=$(brew --prefix llvm)/lib/cmake/llvm \
-  ..
-ninja
-cd ..
-```
+Для одиночного `.c` файла LTO ничего не меняет по смыслу, пасс 
+отрабатывает так же, как без него.
 
 #### 5. Запустить
 
@@ -302,12 +317,43 @@ cd ..
 ./scripts/run.sh
 ```
 
-После прогона картинки появятся в `images/`, граф и логи в `dots/`.
+## Как работает run и как в нем обрабатываются source-файлы и папки?
+
+### Без аргументов (`./run.sh`)
+- Обрабатывает **каждый `.c` файл** в папке `tests/` как отдельный модуль;
+- Имя модуля = имя файла (расширение отбрасывается)
+
+### С аргументами (`./run.sh <args>`)
+
+| Тип аргумента | Что делает? | Пример |
+|---|---|---|
+| **Файл `.c`** | Обрабатывает этот файл как отдельный модуль | `./run.sh tests/main.c` -> модуль `main` |
+| **Папка** | Обрабатывает **все `.c` файлы** внутри папки как **один модуль** (объединяет их) | `./run.sh tests/mymodule/` -> модуль `mymodule` из всех `.c` в папке |
+| **Другое** | Ошибка | `./run.sh nonexistent` -> `:(` |
+
+### Примеры вызовов
+
+```bash
+# Запуск без аргументов: обработать все тесты по отдельности
+./run.sh
+
+# Запуск с 1 файлом
+./run.sh tests/main.c
+
+# Запуск с папкой (все .c файлы в папке объединяются в 1 модуль)
+./run.sh module_tests
+
+# Запуск с несколькими аргументами
+./run.sh tests/foo.c tests/main.c
+```
+
+## В итоге
+После прогона картинки появятся в `images/`, граф и логи в `artifacts/`.
  
 После прогона `./scripts/run.sh`:
-- `dots/graph.dot` -- структура графа
-- `dots/mapping.txt` -- таблица id <-> инструкция
-- `dots/runtime_log.txt` -- лог значений
-- `dots/graph_annotated.dot` -- граф с наложенными значениями
-- `images/graph.png` -- структура
-- `images/graph_annotated.png` -- финальная картинка
+- `artifacts/<test_name>.dot` -- структура графа
+- `artifacts/<test_name>_mapping.txt` -- таблица id <-> инструкция
+- `artifacts/<test_name>_log.txt` -- лог значений
+- `artifacts/<test_name>_annotated.dot` -- граф с наложенными значениями
+
+- `images/<test_name>_annotated.png` -- финальная картинка

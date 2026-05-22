@@ -4,38 +4,31 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
     wget gnupg cmake ninja-build git \
-    libgraphviz-dev graphviz \
+    lsb-release \
+    software-properties-common \
+    graphviz-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# [flops]: You can use complete LLVM install script there
-# RUN wget https://apt.llvm.org/llvm.sh && \
-    # chmod +x llvm.sh && \
-    # ./llvm.sh 19 all \
-    # rm llvm.sh
+RUN wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh && \
+    ./llvm.sh 19 all && \
+    rm llvm.sh
 
-RUN wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
-        > /etc/apt/trusted.gpg.d/apt.llvm.org.asc && \
-    echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" \
-        > /etc/apt/sources.list.d/llvm.list && \
-    apt-get update && apt-get install -y \
-        clang-19 \
-        llvm-19-dev \
-    && rm -rf /var/lib/apt/lists/*
+# RUN wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+#         > /etc/apt/trusted.gpg.d/apt.llvm.org.asc && \
+#     echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" \
+#         > /etc/apt/sources.list.d/llvm.list && \
+#     apt-get update && apt-get install -y \
+#         clang-19 \
+#         llvm-19-dev \
+#         lld-19 \
+#     && rm -rf /var/lib/apt/lists/*
 
 RUN ln -s /usr/bin/clang-19    /usr/bin/clang && \
-    ln -s /usr/bin/clang++-19  /usr/bin/clang++ && \
-    ln -s /usr/bin/opt-19      /usr/bin/opt && \
-    ln -s /usr/bin/llc-19      /usr/bin/llc
+    ln -s /usr/bin/clang++-19  /usr/bin/clang++
+
+RUN apt-get update && apt-get install -y \
+    python3 python3-pygraphviz \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /project
-
-COPY . .
-
-RUN rm -rf build
-
-RUN cmake -G Ninja \
-    -DCMAKE_C_COMPILER=clang-19 \
-    -DCMAKE_CXX_COMPILER=clang++-19 \
-    -DLLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm \
-    -B build \
-    && cmake --build build

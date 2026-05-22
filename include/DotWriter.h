@@ -7,15 +7,10 @@
 #include <fstream>
 #include <string>
 
-namespace mypass {
-// TODO[dkay]: you likely want to mark this and other classes as final
-class DotWriter {
+namespace defuse {
+class DotWriter final {
 public:
-    DotWriter(const std::string &dot_path, const std::string &mapping_path); //FIXME[flops]: Use string_view there instead
-
-    bool IsReady(void) const {
-        return ready_;
-    }
+    DotWriter(std::string_view dot_path, std::string_view mapping_path);
 
     void Write(llvm::Module &Module, ValueIds &ids);
 
@@ -27,9 +22,8 @@ private:
 
     std::ofstream dot_;
     std::ofstream mapping_;
-    bool ready_ = false;
 };
 
-} // mypass
+} // defuse
 
 #endif // DOT_WRITER_H_

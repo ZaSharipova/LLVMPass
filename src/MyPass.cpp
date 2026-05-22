@@ -16,25 +16,26 @@
 using namespace llvm;
 
 namespace {
-// TODO[Dkay]: MyPass is not descriptive name
-struct MyPass : public PassInfoMixin<MyPass> {
+struct DefUsePass : public PassInfoMixin<DefUsePass> {
     PreservedAnalyses run(Module &Module, ModuleAnalysisManager &) {
-        mypass::ValueIds ids{};
+        defuse::ValueIds ids{};
 
-        mypass::DotWriter writer("dots/graph.dot", "mapping.txt");
-        if (!writer.IsReady()) {
-            errs() << "Error: cannot open output files.\n";
-            return PreservedAnalyses::all();
-        }
+        const char *dot_path = std::getenv("MYPASS_DOT_FILE");
+        const char *map_path = std::getenv("MYPASS_MAP_FILE");
+        defuse::DotWriter writer(dot_path ? dot_path : "dots/graph.dot",
+            map_path ? map_path : "dots/mapping.txt");
 
         writer.Write(Module, ids);
-        errs() << "Written graph.dot and mapping.txt\n";
+        errs() << "Written " << (dot_path ? dot_path : "dots/graph.dot") << " and " << (map_path ? map_path : "dots/mapping.txt")  << "\n";
 
-        mypass::Instrumenter instrumenter(Module);
+        defuse::Instrumenter instrumenter(Module);
         int count = instrumenter.Instrument(ids);
         errs() << "Instrumented " << count << " instructions\n";
 
-        // TODO[flops]: What if count == 0?
+        if (count == 0) {
+            errs() << "Warning: no instructions were instrumented\n";
+            return PreservedAnalyses::all();
+        }
 
         return PreservedAnalyses::none();
     }
@@ -44,16 +45,21 @@ struct MyPass : public PassInfoMixin<MyPass> {
 
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo
 llvmGetPassPluginInfo(void) {
-    return {LLVM_PLUGIN_API_VERSION, "MyPass", "v0.1",
+    return {LLVM_PLUGIN_API_VERSION, "DefUsePass", "v0.1",
         [](PassBuilder &PassBuilder) {
-            PassBuilder.registerPipelineParsingCallback(
+            PassBuilder.registerPipelineParsingCallback( // left it in case of a simple call
                 [](StringRef Name, ModulePassManager &ModulePassManager, ArrayRef<PassBuilder::PipelineElement>) {
-                    if (Name == "my-pass") {
-                        ModulePassManager.addPass(MyPass());
+                    if (Name == "defuse-pass") {
+                        ModulePassManager.addPass(DefUsePass());
                         return true;
                     }
 
                     return false;
+                });
+
+            PassBuilder.registerFullLinkTimeOptimizationEarlyEPCallback(
+                [](ModulePassManager &ModulePassManager, OptimizationLevel) {
+                ModulePassManager.addPass(DefUsePass());
                 });
         }};
 }

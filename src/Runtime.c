@@ -5,30 +5,40 @@
 static FILE *global_log_file = NULL;
 
 __attribute__((constructor))
-static void __mypass_log_init(void) { // имена с "__" дабы соответсвовать стилю функций внутренней инфраструктуры // FIXME[flops]: It really makes sense, but stdlib reserves names with `__` prefix, so you are not supposed to use it. You can make `__` postfix instead to mark those funcs as your internal
-    global_log_file = fopen("runtime_log.txt", "w");
+static void mypass_log_init__(void) {
+    const char *log_path = getenv("MYPASS_LOG_FILE");
+    if (!log_path) {
+        log_path = "runtime_log.txt";
+    }
+
+    global_log_file = fopen(log_path, "w");
     if (!global_log_file) {
-        perror("Error: failed to open \"runtime_log.txt\".");
-        return;
+        perror("Error: failed to open log file.");
     }
 }
 
 __attribute__((destructor))
-static void __mypass_log_finish(void) {
+static void mypass_log_finish__(void) {
     if (global_log_file) {
         fclose(global_log_file);
         global_log_file = NULL;
     }
 }
 
-void __mypass_log_i32(int id, int32_t value) {
+void mypass_log_i32__(int id, int32_t value) {
     if (global_log_file) {
         fprintf(global_log_file, "%d %d\n", id, (int)value);
     }
 }
 
-void __mypass_log_i64(int id, int64_t value) {
+void mypass_log_i64__(int id, int64_t value) {
     if (global_log_file) {
-        fprintf(global_log_file, "%d %lld\n", id, (long long)value);
+        fprintf(global_log_file, "%d 0x%llx\n", id, (unsigned long long)value);
+    }
+}
+
+void mypass_log_edge__(uint32_t from_id, uint32_t to_id) {
+    if (global_log_file) {
+        fprintf(global_log_file, "edge %u %u\n", from_id, to_id);
     }
 }

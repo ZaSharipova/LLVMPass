@@ -7,7 +7,7 @@
 
 #include <cassert>
 
-namespace mypass {
+namespace defuse {
 
 // TODO: could be done with regexp, but its ok
 //
@@ -42,7 +42,7 @@ std::string ShortLabel(const llvm::Value *Value) {
     return "value";
 }
 
-std::string EscapeForDot(const std::string &string) {
+std::string EscapeForDot(const std::string_view &string) {
     assert(!string.empty());
 
     std::string out_string = "";
@@ -58,4 +58,4 @@ std::string EscapeForDot(const std::string &string) {
     return out_string;
 }
 
-} // mypass
+} // defuse
