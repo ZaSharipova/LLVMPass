@@ -77,25 +77,29 @@ void Instrumenter::InstrumentEdges(llvm::CallInst *call, ValueIds &ids) {
     llvm::Function *callee = call->getCalledFunction();
     if (!callee || callee->isDeclaration()) return;
 
-    for (unsigned i = 0; i < call->arg_size(); i++) {
-        auto *arg_instruction = llvm::dyn_cast<llvm::Instruction>(call->getArgOperand(i));
-        if (!arg_instruction || !ids.HasValue(arg_instruction)) continue;
+    auto param_it = callee->arg_begin();
+    for (llvm::Value *arg : call->args()) {
+        auto *arg_instruction = llvm::dyn_cast<llvm::Instruction>(arg);
+        if (!arg_instruction || !ids.HasValue(arg_instruction)) {
+            param_it++;
+            continue;
+        }
         int from_id = ids.GetOrAssign(arg_instruction);
 
-        auto param_it = callee->arg_begin();
-        std::advance(param_it, i);
         auto to_id = FindCalleeEntryId(&*param_it, ids);
-        if (!to_id) continue;
-
-        llvm::IRBuilder<> builder(call);
-        builder.CreateCall(log_edge_, {builder.getInt32(from_id),builder.getInt32(*to_id)});
+        if (to_id) {
+            llvm::IRBuilder<> builder(call);
+            builder.CreateCall(log_edge_, {builder.getInt32(from_id),builder.getInt32(*to_id)});
+        }
+        
+        param_it++;
     }
 }
 
 int Instrumenter::Instrument(ValueIds &ids) {
     int count = 0;
 
-    for (llvm::Function &Function : module_) { // there we are giving ids to all the instructions
+    for (llvm::Function &Function : module_) { // there we are giving ids to all the instructions and instrumenting values
         if (Function.isDeclaration()) continue;
 
         for (llvm::BasicBlock &BasicBlock : Function) {

@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     wget gnupg cmake ninja-build git \
     lsb-release \
     software-properties-common \
+    graphviz-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN wget https://apt.llvm.org/llvm.sh && \

@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+import argparse
 import pygraphviz as pgv
 from collections import defaultdict
 
@@ -43,14 +44,20 @@ def format_values(vals: list[int]) -> str:
         return "values: (not executed)"
     return "values: " + ", ".join(str(v) for v in vals)
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("graph_in", default = "dots/graph.dot")
+    parser.add_argument("graph_out", default = "dots/graph_annotated.dot")
+
+    return parser.parse_args()
+
 def main():
+    args = parse_args()
     log_path = os.environ.get("MYPASS_LOG_FILE", "runtime_log.txt")
-    graph_in = sys.argv[1] if len(sys.argv) > 1 else "dots/graph.dot"
-    graph_out = sys.argv[2] if len(sys.argv) > 2 else "dots/graph_annotated.dot"
 
     values, edges = read_log(log_path)
 
-    Graph = pgv.AGraph(graph_in)
+    Graph = pgv.AGraph(args.graph_in)
 
     for node in Graph.nodes():
         node_id = int(node.name[1:])
@@ -72,10 +79,10 @@ def main():
         added.add(key)
         Graph.add_edge(from_name, to_name, color = "red", style = "dashed", label = "call")
 
-    Graph.write(graph_out)
-    png_out = "images/" + os.path.basename(graph_out).replace(".dot", ".png")
+    Graph.write(args.graph_out)
+    png_out = "images/" + os.path.basename(args.graph_out).replace(".dot", ".png")
     Graph.draw(png_out, prog = "dot")
-    print(f"Written {graph_out} ({sum(len(v) for v in values.values())} value records).")
+    print(f"Written {args.graph_out} ({sum(len(v) for v in values.values())} value records).")
 
 if __name__ == "__main__":
     main()

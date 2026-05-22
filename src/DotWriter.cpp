@@ -8,7 +8,7 @@
 #include "llvm/IR/Use.h"
 
 namespace defuse {
-DotWriter::DotWriter(const std::string_view &dot_path, const std::string_view &mapping_path) {
+DotWriter::DotWriter(std::string_view dot_path, std::string_view mapping_path) {
     dot_.open(std::string(dot_path));
     mapping_.open(std::string(mapping_path));
     if (!dot_.is_open()) {

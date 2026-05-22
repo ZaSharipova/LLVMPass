@@ -10,7 +10,7 @@
 namespace defuse {
 class DotWriter final {
 public:
-    DotWriter(const std::string_view &dot_path, const std::string_view &mapping_path);
+    DotWriter(std::string_view dot_path, std::string_view mapping_path);
 
     void Write(llvm::Module &Module, ValueIds &ids);
 
